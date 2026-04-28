@@ -25,20 +25,21 @@ function getAllObservations() {
     return obsStr ? JSON.parse(obsStr) : [];
 }
 
+// ✅ 改动 1：先查静态观测，再查用户观测
 function getObservationById(id) {
+    if (typeof STATIC_OBSERVATIONS !== 'undefined') {
+        const staticObs = STATIC_OBSERVATIONS.find(obs => obs.id === id);
+        if (staticObs) return staticObs;
+    }
+
     const observations = getAllObservations();
     return observations.find(obs => obs.id === id);
 }
 
+// ✅ 改动 2：直接调用全局 incrementView（observations.js 提供）
+//          静态和用户观测都走同一张 viewCounts 表
 function incrementViewCount(id) {
-    const observations = getAllObservations();
-    const observation = observations.find(obs => obs.id === id);
-
-    if (observation) {
-        if (!observation.viewCount) observation.viewCount = 0;
-        observation.viewCount += 1;
-        localStorage.setItem('userObservations', JSON.stringify(observations));
-    }
+    incrementView(id);
 }
 
 function deleteObservation(id) {
@@ -48,7 +49,8 @@ function deleteObservation(id) {
     const filtered = observations.filter(obs => obs.id !== id);
     localStorage.setItem('userObservations', JSON.stringify(filtered));
 
-    // Also remove from collection if present
+    // 删除观测的同时清掉它的 view count，避免 viewCounts 越攒越大
+    removeViewCount(id);
     removeFromCollectionSilent(id);
 
     alert('Observation deleted successfully!');
@@ -113,7 +115,7 @@ function updateCollectionBtn(inCollection) {
     }
 }
 
-// ===== Toast Notification =====
+// ===== Toast =====
 function showToast(message) {
     let toast = document.getElementById('toast');
     if (!toast) {
@@ -151,7 +153,9 @@ function displayObservationDetail() {
         return;
     }
 
+    // 先 +1 再读，让显示的次数包含本次访问
     incrementViewCount(observationId);
+    const viewCount = getViewCount(observationId);
 
     const detailContainer = document.getElementById('observationDetail');
     const currentUser = getCurrentUser();
@@ -176,9 +180,10 @@ function displayObservationDetail() {
         `;
     }
 
+    // ✅ 改动 3：view count 从全局表读，静态观测也能显示了
     const viewCountDisplay = `
         <p style="margin-top:10px;color:#999;font-size:14px;">
-            Viewed ${observation.viewCount || 1} time${(observation.viewCount || 1) === 1 ? '' : 's'}
+            Viewed ${viewCount} time${viewCount === 1 ? '' : 's'}
         </p>
     `;
 
@@ -215,6 +220,10 @@ function displayObservationDetail() {
         </div>
     `;
 
+    const dateDisplay = observation.isStatic
+        ? `<p style="margin-top:30px;padding-top:20px;border-top:1px solid #eee;color:#999;font-size:14px;">Sample observation</p>`
+        : `<p style="margin-top:30px;padding-top:20px;border-top:1px solid #eee;color:#999;font-size:14px;">Created on: ${new Date(observation.date).toLocaleString()}</p>`;
+
     detailContainer.innerHTML = `
         <div class="image-box">${imageHtml}</div>
         <section class="text-content">
@@ -246,10 +255,7 @@ function displayObservationDetail() {
                 ${observation.visibility ? `<li>Visibility: ${observation.visibility}</li>` : ''}
             </ul>` : ''}
 
-            <p style="margin-top:30px;padding-top:20px;border-top:1px solid #eee;color:#999;font-size:14px;">
-                Created on: ${new Date(observation.date).toLocaleString()}
-            </p>
-
+            ${dateDisplay}
             ${modificationHistory}
             ${actionButtons}
         </section>
